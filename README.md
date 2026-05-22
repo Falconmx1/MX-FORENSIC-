@@ -41,19 +41,24 @@ chmod +x mx-forensic.sh   # Linux
 En Windows, ejecutar PowerShell como administrador y desbloquear scripts:
 Set-ExecutionPolicy Unrestricted -Scope Process
 
-🕹️ Uso
+🚀 Ejemplos de uso finales
 
-🔹 Linux
-sudo ./mx-forensic.sh --ram --disk /dev/sda --output ./caso001
+# 1. Forense completo con todo
+sudo ./mx-forensic.sh \
+    --ram --disk /dev/sda \
+    --hash --analyze --report \
+    --volatility --yara --live-response \
+    --thehive --misp --elk \
+    --ml --auto-classify \
+    --dashboard --webhook "URL" --email "soc@company.com"
 
-🔹 Windows (PowerShell admin)
-.\mx-forensic.ps1 -Ram -Disk \\.\PhysicalDrive0 -Output C:\caso001
+# 2. Cloud forensics
+sudo ./mx-forensic.sh \
+    --ram --disk /dev/sda \
+    --cloud aws --aws-bucket my-forensic-bucket
 
-Opciones disponibles
+# 3. Mobile forensics Android
+sudo ./mx-forensic.sh --mobile --android --android-root
 
---ram          : Dump de memoria RAM
---disk DISCO   : Imagen forense del disco (ej: /dev/sda o \\.\PhysicalDrive0)
---hash         : Calcula hashes de integridad del dump
---analyze      : Extrae strings, procesos y conexiones de red de la RAM dump
---report       : Genera reporte HTML
---help         : Muestra esta ayuda
+# 4. Análisis con ML y ELK
+sudo ./mx-forensic.sh --ram --ml --elk --dashboard
