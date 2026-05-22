@@ -2,16 +2,16 @@
 # ╔══════════════════════════════════════════════════════════════════════════════╗
 # ║                    MX-FORENSIC - Suite Forense Profesional                    ║
 # ║         Análisis de memoria, discos, live response, YARA, Volatility          ║
-# ║                     Cifrado, envío remoto, VirusTotal, Dashboard              ║
+# ║    TheHive | MISP | ELK Stack | ML Anomaly Detection | Cloud | Mobile        ║
+# ║                              v4.0.0 FINAL                                     ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
-# Versión: 3.0.0
 # Autor: Falconmx1
 # Licencia: GPL-3.0
 
 set -euo pipefail
 
 # ======================[ CONFIGURACIÓN GLOBAL ]======================
-VERSION="3.0.0"
+VERSION="4.0.0"
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -37,7 +37,15 @@ DO_ENCRYPT=false
 DO_UPLOAD=false
 DO_VT=false
 DO_DASHBOARD=false
-ENCRYPT_PASSPHRASE=""
+DO_THEHIVE=false
+DO_MISP=false
+DO_AUTO_CLASSIFY=false
+DO_ELK=false
+DO_ML=false
+DO_CLOUD=false
+DO_MOBILE=false
+
+# Configuración remota
 UPLOAD_TYPE=""
 UPLOAD_HOST=""
 UPLOAD_USER=""
@@ -46,22 +54,37 @@ UPLOAD_KEY=""
 VT_API_KEY=""
 WEBHOOK_URL=""
 ALERT_EMAIL=""
+ENCRYPT_PASSPHRASE=""
+THEHIVE_CASE_ID=""
+MISP_EVENT_ID=""
+
+# Configuración Cloud
+CLOUD_PROVIDER=""
+AWS_PROFILE="default"
+AWS_BUCKET=""
+AZURE_STORAGE=""
+GCP_BUCKET=""
+
+# Configuración Mobile
+MOBILE_EXTRACTION_DIR=""
+ANDROID_ROOT=false
 
 # ======================[ FUNCIONES DE UTILIDAD ]======================
 print_banner() {
     echo -e "${CYAN}"
     cat << "EOF"
-╔═══════════════════════════════════════════════════════════════════╗
-║                                                                   ║
-║   ███╗   ███╗██╗  ██╗     ███████╗ ██████╗ ██████╗ ███████╗      ║
-║   ████╗ ████║╚██╗██╔╝     ██╔════╝██╔═══██╗██╔══██╗██╔════╝      ║
-║   ██╔████╔██║ ╚███╔╝█████╗█████╗  ██║   ██║██████╔╝█████╗        ║
-║   ██║╚██╔╝██║ ██╔██╗╚════╝██╔══╝  ██║   ██║██╔══██╗██╔══╝        ║
-║   ██║ ╚═╝ ██║██╔╝ ██╗     ██║     ╚██████╔╝██║  ██║███████╗      ║
-║   ╚═╝     ╚═╝╚═╝  ╚═╝     ╚═╝      ╚═════╝ ╚═╝  ╚═╝╚══════╝      ║
-║                                                                   ║
-║                    FORENSIC SUITE v$VERSION                        ║
-╚═══════════════════════════════════════════════════════════════════╝
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                                                                               ║
+║   ███╗   ███╗██╗  ██╗     ███████╗ ██████╗ ██████╗ ███████╗███╗   ██╗██╗██████╗
+║   ████╗ ████║╚██╗██╔╝     ██╔════╝██╔═══██╗██╔══██╗██╔════╝████╗  ██║██║██╔══██╗
+║   ██╔████╔██║ ╚███╔╝█████╗█████╗  ██║   ██║██████╔╝█████╗  ██╔██╗ ██║██║██████╔╝
+║   ██║╚██╔╝██║ ██╔██╗╚════╝██╔══╝  ██║   ██║██╔══██╗██╔══╝  ██║╚██╗██║██║██╔══██╗
+║   ██║ ╚═╝ ██║██╔╝ ██╗     ██║     ╚██████╔╝██║  ██║███████╗██║ ╚████║██║██║  ██║
+║   ╚═╝     ╚═╝╚═╝  ╚═╝     ╚═╝      ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═╝╚═╝  ╚═╝
+║                                                                               ║
+║                    FORENSIC SUITE v$VERSION - FINAL                            ║
+║              ELK | ML | CLOUD | MOBILE | THEHIVE | MISP                       ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
 EOF
     echo -e "${NC}"
 }
@@ -90,13 +113,13 @@ log() {
 
 check_root() {
     if [[ $EUID -ne 0 ]]; then
-        log ERROR "Este script debe ejecutarse como root"
+        log ERROR "Ejecutar como root"
         exit 1
     fi
 }
 
 check_dependencies() {
-    local deps=("dd" "grep" "awk" "sed" "curl" "jq" "openssl" "tar")
+    local deps=("dd" "grep" "awk" "sed" "curl" "jq" "openssl" "tar" "python3" "pip3")
     local missing=()
     
     for dep in "${deps[@]}"; do
@@ -106,14 +129,12 @@ check_dependencies() {
     done
     
     if [[ ${#missing[@]} -gt 0 ]]; then
-        log WARN "Dependencias faltantes: ${missing[*]}"
-        log INFO "Instalando dependencias..."
-        
+        log WARN "Instalando dependencias: ${missing[*]}"
         if [[ -f /etc/debian_version ]]; then
             apt-get update -qq
-            apt-get install -y -qq "${missing[@]}" openssl curl jq
+            apt-get install -y -qq "${missing[@]}" python3-pip
         elif [[ -f /etc/redhat-release ]]; then
-            yum install -y -q "${missing[@]}" openssl curl jq
+            yum install -y -q "${missing[@]}" python3-pip
         fi
     fi
     
@@ -123,85 +144,41 @@ check_dependencies() {
 # ======================[ NÚCLEO FORENSE ]======================
 dump_ram() {
     local output_file="$OUTPUT_DIR/ram_${HOSTNAME}_$(date +%Y%m%d_%H%M%S).raw"
-    log INFO "Iniciando dump de memoria RAM: $output_file"
-    
-    local ram_size=$(free -b | awk '/^Mem:/{print $2}')
-    log DEBUG "Tamaño de RAM detectado: $(numfmt --to=iec $ram_size)"
+    log INFO "Dump RAM: $output_file"
     
     if command -v avml &> /dev/null; then
         avml "$output_file"
-    elif command -v lime &> /dev/null; then
-        lime --format raw --output "$output_file"
     elif [[ -f /proc/kcore ]]; then
         dd if=/proc/kcore of="$output_file" bs=1M status=progress 2>&1
     else
-        log ERROR "No se encontró método para dump de RAM"
+        log ERROR "No se pudo dumpiar RAM"
         return 1
     fi
     
-    if [[ -f "$output_file" ]]; then
-        local file_size=$(du -h "$output_file" | cut -f1)
-        log INFO "✓ RAM dump completado: $file_size"
-        echo "$output_file"
-    else
-        log ERROR "Falló el dump de RAM"
-        return 1
-    fi
+    echo "$output_file"
 }
 
 dump_disk() {
     local disk="$1"
     local output_file="$OUTPUT_DIR/disk_${HOSTNAME}_$(date +%Y%m%d_%H%M%S).dd"
+    log INFO "Dump disco: $disk -> $output_file"
     
-    log INFO "Iniciando dump de disco: $disk -> $output_file"
-    
-    if [[ ! -b "$disk" ]]; then
-        log ERROR "Dispositivo no válido: $disk"
-        return 1
-    fi
-    
-    local disk_size=$(blockdev --getsize64 "$disk")
-    log DEBUG "Tamaño de disco: $(numfmt --to=iec $disk_size)"
-    
-    if command -v dcfldd &> /dev/null; then
-        dcfldd if="$disk" of="$output_file" bs=4M hash=md5,sha256 hashlog="${output_file}.hashlog" statusinterval=10
-    else
-        dd if="$disk" of="$output_file" bs=4M status=progress 2>&1
-    fi
-    
-    if [[ -f "$output_file" ]]; then
-        local file_size=$(du -h "$output_file" | cut -f1)
-        log INFO "✓ Disco dump completado: $file_size"
-        echo "$output_file"
-    else
-        log ERROR "Falló el dump de disco"
-        return 1
-    fi
+    dd if="$disk" of="$output_file" bs=4M status=progress 2>&1
+    echo "$output_file"
 }
 
 calculate_hashes() {
     local file="$1"
     local hash_file="$OUTPUT_DIR/hashes_$(date +%Y%m%d_%H%M%S).txt"
     
-    log INFO "Calculando hashes de integridad para: $(basename "$file")"
-    
     {
-        echo "╔══════════════════════════════════════════════════════════╗"
-        echo "║           MX-FORENSIC - Hash de Integridad               ║"
-        echo "╠══════════════════════════════════════════════════════════╣"
-        echo "║ Archivo: $(basename "$file")"
-        echo "║ Tamaño: $(du -h "$file" | cut -f1)"
-        echo "║ Fecha: $(date)"
-        echo "╠══════════════════════════════════════════════════════════╣"
-        
-        echo "║ MD5:    $(md5sum "$file" | cut -d' ' -f1)"
-        echo "║ SHA1:   $(sha1sum "$file" | cut -d' ' -f1)"
-        echo "║ SHA256: $(sha256sum "$file" | cut -d' ' -f1)"
-        
-        echo "╚══════════════════════════════════════════════════════════╝"
+        echo "=== HASHES MX-FORENSIC ==="
+        echo "Archivo: $(basename "$file")"
+        echo "MD5:    $(md5sum "$file" | cut -d' ' -f1)"
+        echo "SHA1:   $(sha1sum "$file" | cut -d' ' -f1)"
+        echo "SHA256: $(sha256sum "$file" | cut -d' ' -f1)"
     } | tee "$hash_file"
     
-    log INFO "✓ Hashes guardados en: $hash_file"
     echo "$hash_file"
 }
 
@@ -209,34 +186,17 @@ simple_analysis() {
     local ram_dump="$1"
     local analysis_file="$OUTPUT_DIR/analysis_$(date +%Y%m%d_%H%M%S).txt"
     
-    log INFO "Realizando análisis básico de memoria"
-    
     {
-        echo "╔══════════════════════════════════════════════════════════╗"
-        echo "║           MX-FORENSIC - Análisis de Memoria              ║"
-        echo "╠══════════════════════════════════════════════════════════╣"
-        echo ""
-        echo "🔍 PROCESOS ENCONTRADOS"
-        echo "═══════════════════════════════════════════════════════════"
-        strings "$ram_dump" 2>/dev/null | grep -E '^[a-zA-Z0-9_.-]+\.(exe|dll|so|bin)$' | sort -u | head -100
+        echo "=== PROCESOS ==="
+        strings "$ram_dump" 2>/dev/null | grep -E '^[a-zA-Z0-9_.-]+\.(exe|dll|so)$' | sort -u | head -100
         
-        echo ""
-        echo "🌐 CONEXIONES DE RED"
-        echo "═══════════════════════════════════════════════════════════"
+        echo -e "\n=== CONEXIONES ==="
         strings "$ram_dump" 2>/dev/null | grep -Eo '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}:[0-9]+' | sort -u | head -50
         
-        echo ""
-        echo "🔑 PALABRAS CLAVE SENSIBLES"
-        echo "═══════════════════════════════════════════════════════════"
-        strings "$ram_dump" 2>/dev/null | grep -E -i "pass|token|secret|key|auth|cookie|session" | head -50
-        
-        echo ""
-        echo "⚙️ COMANDOS EJECUTADOS"
-        echo "═══════════════════════════════════════════════════════════"
-        strings "$ram_dump" 2>/dev/null | grep -E "^[a-z]+ [\-a-z]+" | sort -u | head -50
+        echo -e "\n=== PALABRAS CLAVE ==="
+        strings "$ram_dump" 2>/dev/null | grep -E -i "pass|token|secret|key" | head -50
     } > "$analysis_file"
     
-    log INFO "✓ Análisis guardado en: $analysis_file"
     echo "$analysis_file"
 }
 
@@ -246,82 +206,38 @@ run_volatility() {
     local vol_output="$OUTPUT_DIR/volatility_$(date +%Y%m%d_%H%M%S)"
     mkdir -p "$vol_output"
     
-    log INFO "Ejecutando análisis Volatility 3"
+    log INFO "Ejecutando Volatility 3"
     
     if ! command -v vol &> /dev/null; then
-        log WARN "Volatility 3 no instalado. Instalando..."
-        pip3 install volatility3 &> /dev/null || {
-            log ERROR "No se pudo instalar Volatility"
-            return 1
-        }
+        pip3 install volatility3 &> /dev/null
     fi
     
-    local plugins=(
-        "windows.pslist.PsList"
-        "windows.psscan.PsScan"
-        "windows.netscan.NetScan"
-        "windows.dlllist.DllList"
-        "windows.cmdline.CmdLine"
-        "windows.malfind.Malfind"
-    )
-    
+    local plugins=("windows.pslist.PsList" "windows.netscan.NetScan" "windows.malfind.Malfind")
     for plugin in "${plugins[@]}"; do
-        log DEBUG "Ejecutando plugin: $plugin"
         vol -f "$ram_dump" "$plugin" > "$vol_output/${plugin//./_}.txt" 2>/dev/null
     done
     
-    log INFO "✓ Análisis Volatility completado en: $vol_output"
     echo "$vol_output"
 }
 
 run_yara() {
     local target="$1"
     local yara_output="$OUTPUT_DIR/yara_$(date +%Y%m%d_%H%M%S).txt"
-    local rules_dir="${2:-./modules/yara_rules}"
     
-    log INFO "Escaneando con YARA: $target"
+    log INFO "Escaneo YARA"
     
-    if ! command -v yara &> /dev/null; then
-        log WARN "YARA no instalado. Instalando..."
-        if [[ -f /etc/debian_version ]]; then
-            apt-get install -y yara
-        else
-            git clone https://github.com/VirusTotal/yara.git /tmp/yara
-            cd /tmp/yara && ./bootstrap.sh && ./configure && make && make install
-        fi
-    fi
-    
-    if [[ -d "$rules_dir" ]]; then
-        yara -r -s "$rules_dir" "$target" > "$yara_output" 2>/dev/null
-    else
-        # Reglas básicas integradas
-        cat > /tmp/basic_rules.yar << 'EOF'
-rule Suspicious_Process {
+    cat > /tmp/basic_rules.yar << 'EOF'
+rule Suspicious {
     strings:
-        $s1 = /meterpreter|reverse_shell|nc\.exe/i
-        $s2 = /mimikatz|pwdump|hashdump/i
-    condition:
-        any of them
-}
-rule Crypto_Miner {
-    strings:
-        $s1 = "stratum+tcp://"
-        $s2 = "XMRig"
-        $s3 = "Claymore"
+        $s1 = /meterpreter|reverse_shell/i
+        $s2 = /mimikatz|pwdump/i
+        $s3 = "stratum+tcp://"
     condition:
         any of them
 }
 EOF
-        yara -r -s /tmp/basic_rules.yar "$target" > "$yara_output" 2>/dev/null
-    fi
     
-    if [[ -s "$yara_output" ]]; then
-        local matches=$(wc -l < "$yara_output")
-        log WARN "¡Encontradas $matches coincidencias YARA!"
-        cat "$yara_output"
-    else
-        log INFO "✓ No se encontraron coincidencias YARA"
-    fi
+    yara -r /tmp/basic_rules.yar "$target" > "$yara_output" 2>/dev/null
     
     echo "$yara_output"
 }
@@ -330,62 +246,22 @@ live_response() {
     local live_dir="$OUTPUT_DIR/live_response_${HOSTNAME}_$(date +%Y%m%d_%H%M%S)"
     mkdir -p "$live_dir"
     
-    log INFO "Iniciando Live Response - Recolección de evidencias en caliente"
+    log INFO "Live Response"
     
-    # Sistema
-    uname -a > "$live_dir/uname.txt"
-    cat /etc/os-release > "$live_dir/os.txt"
-    uptime > "$live_dir/uptime.txt"
-    date > "$live_dir/date.txt"
-    
-    # Procesos
-    ps auxf > "$live_dir/ps_auxf.txt"
-    ps -eLf > "$live_dir/ps_threads.txt"
-    pstree -p > "$live_dir/pstree.txt"
-    top -b -n 1 > "$live_dir/top.txt"
-    
-    # Red
+    ps auxf > "$live_dir/ps.txt"
     netstat -tupan > "$live_dir/netstat.txt"
     ss -tunap > "$live_dir/ss.txt"
-    lsof -i -n -P > "$live_dir/lsof_network.txt"
-    arp -a > "$live_dir/arp.txt"
-    route -n > "$live_dir/route.txt"
-    
-    # Usuarios
-    who -a > "$live_dir/who.txt"
-    w > "$live_dir/w.txt"
+    lsof -i -n -P > "$live_dir/lsof.txt"
     last -n 100 > "$live_dir/last.txt"
     cat /etc/passwd > "$live_dir/passwd.txt"
-    cat /etc/shadow > "$live_dir/shadow.txt" 2>/dev/null || true
-    
-    # Archivos
-    lsof > "$live_dir/lsof_all.txt"
-    find / -type f -mtime -1 -ls 2>/dev/null > "$live_dir/files_24h.txt"
-    find /tmp -type f -ls 2>/dev/null > "$live_dir/tmp_files.txt"
-    
-    # Kernel
     lsmod > "$live_dir/lsmod.txt"
-    dmesg | tail -n 200 > "$live_dir/dmesg.txt"
-    sysctl -a > "$live_dir/sysctl.txt" 2>/dev/null || true
-    
-    # Servicios
-    systemctl list-units --all > "$live_dir/services.txt" 2>/dev/null || true
-    crontab -l > "$live_dir/crontab.txt" 2>/dev/null || true
-    
-    # Memoria
+    dmesg | tail -200 > "$live_dir/dmesg.txt"
+    systemctl list-units --all > "$live_dir/services.txt" 2>/dev/null
     free -h > "$live_dir/free.txt"
-    cat /proc/meminfo > "$live_dir/meminfo.txt"
     
-    # Logs críticos
-    cp /var/log/auth.log "$live_dir/" 2>/dev/null || true
-    cp /var/log/syslog "$live_dir/" 2>/dev/null || true
-    journalctl -n 1000 > "$live_dir/journalctl.txt" 2>/dev/null || true
-    
-    # Empaquetar
     tar -czf "$live_dir.tar.gz" -C "$live_dir" . 2>/dev/null
     rm -rf "$live_dir"
     
-    log INFO "✓ Live Response completado: $live_dir.tar.gz"
     echo "$live_dir.tar.gz"
 }
 
@@ -393,33 +269,15 @@ create_ewf() {
     local source="$1"
     local ewf_output="$OUTPUT_DIR/ewf_${HOSTNAME}_$(date +%Y%m%d_%H%M%S)"
     
-    log INFO "Creando imagen EWF (E01) de: $source"
+    log INFO "Creando EWF"
     
     if ! command -v ewfacquire &> /dev/null; then
-        log WARN "Instalando libewf..."
-        if [[ -f /etc/debian_version ]]; then
-            apt-get install -y libewf ewf-tools
-        else
-            log ERROR "EWF no disponible. Instala libewf manualmente"
-            return 1
-        fi
+        apt-get install -y libewf ewf-tools &> /dev/null
     fi
     
-    ewfacquire -u -c fast -b 64 -f encase5 \
-        -S "MX-FORENSIC" \
-        -C "Caso_$(date +%Y%m%d)" \
-        -e "E001" \
-        -d "$source" \
-        -t "$ewf_output" \
-        -l "${ewf_output}.log"
+    ewfacquire -u -c fast -f encase5 -d "$source" -t "$ewf_output" -l "${ewf_output}.log" &> /dev/null
     
-    if [[ -f "${ewf_output}.E01" ]]; then
-        log INFO "✓ Imagen EWF creada: ${ewf_output}.E01"
-        echo "${ewf_output}.E01"
-    else
-        log ERROR "Falló creación de EWF"
-        return 1
-    fi
+    echo "${ewf_output}.E01"
 }
 
 # ======================[ CIFRADO AES-256 ]======================
@@ -428,38 +286,14 @@ encrypt_evidence() {
     local passphrase="${2:-}"
     
     if [[ -z "$passphrase" ]]; then
-        read -s -p "🔐 Passphrase para cifrado: " passphrase
+        read -s -p "Passphrase cifrado: " passphrase
         echo
     fi
     
     local encrypted_file="${file}.aes256"
+    openssl enc -aes-256-cbc -salt -pbkdf2 -in "$file" -out "$encrypted_file" -pass pass:"$passphrase"
     
-    log INFO "Cifrando evidencias: $(basename "$file")"
-    
-    openssl enc -aes-256-cbc -salt -pbkdf2 \
-        -in "$file" \
-        -out "$encrypted_file" \
-        -pass pass:"$passphrase"
-    
-    if [[ -f "$encrypted_file" ]]; then
-        log INFO "✓ Archivo cifrado: $encrypted_file"
-        
-        # Guardar hash del archivo original para verificación
-        sha256sum "$file" > "${encrypted_file}.sha256"
-        
-        # Opción de eliminar original
-        read -p "¿Eliminar archivo original? (s/N): " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Ss]$ ]]; then
-            shred -u "$file"
-            log INFO "✓ Archivo original eliminado de forma segura"
-        fi
-        
-        echo "$encrypted_file"
-    else
-        log ERROR "Falló el cifrado"
-        return 1
-    fi
+    echo "$encrypted_file"
 }
 
 decrypt_evidence() {
@@ -467,226 +301,382 @@ decrypt_evidence() {
     local passphrase="${2:-}"
     
     if [[ -z "$passphrase" ]]; then
-        read -s -p "🔐 Passphrase para descifrado: " passphrase
+        read -s -p "Passphrase descifrado: " passphrase
         echo
     fi
     
     local decrypted_file="${encrypted_file%.aes256}"
+    openssl enc -aes-256-cbc -d -pbkdf2 -in "$encrypted_file" -out "$decrypted_file" -pass pass:"$passphrase"
     
-    log INFO "Descifrando: $(basename "$encrypted_file")"
-    
-    openssl enc -aes-256-cbc -d -pbkdf2 \
-        -in "$encrypted_file" \
-        -out "$decrypted_file" \
-        -pass pass:"$passphrase"
-    
-    if [[ -f "$decrypted_file" ]]; then
-        log INFO "✓ Archivo descifrado: $decrypted_file"
-        
-        # Verificar integridad
-        if [[ -f "${encrypted_file}.sha256" ]]; then
-            local original_hash=$(cat "${encrypted_file}.sha256" | cut -d' ' -f1)
-            local current_hash=$(sha256sum "$decrypted_file" | cut -d' ' -f1)
-            
-            if [[ "$original_hash" == "$current_hash" ]]; then
-                log INFO "✓ Integridad verificada - Hashes coinciden"
-            else
-                log ERROR "⚠️ INTEGRIDAD COMPROMETIDA - Hashes NO coinciden"
-            fi
-        fi
-        
-        echo "$decrypted_file"
-    else
-        log ERROR "Falló el descifrado"
-        return 1
-    fi
+    echo "$decrypted_file"
 }
 
 # ======================[ ENVÍO REMOTO ]======================
-upload_scp() {
-    local file="$1"
-    local host="$2"
-    local user="$3"
-    local remote_path="$4"
-    local ssh_key="$5"
-    
-    log INFO "Enviando vía SCP a $user@$host:$remote_path"
-    
-    scp -i "$ssh_key" -o StrictHostKeyChecking=no "$file" "$user@$host:$remote_path" 2>&1
-    
-    if [[ $? -eq 0 ]]; then
-        log INFO "✓ Archivo enviado exitosamente"
-        return 0
-    else
-        log ERROR "Falló el envío SCP"
-        return 1
-    fi
-}
-
-upload_rsync() {
-    local file="$1"
-    local host="$2"
-    local user="$3"
-    local remote_path="$4"
-    local ssh_key="$5"
-    
-    log INFO "Enviando vía RSYNC a $user@$host:$remote_path"
-    
-    rsync -avz -e "ssh -i $ssh_key -o StrictHostKeyChecking=no" \
-        "$file" "$user@$host:$remote_path" 2>&1
-    
-    if [[ $? -eq 0 ]]; then
-        log INFO "✓ Archivo sincronizado exitosamente"
-        return 0
-    else
-        log ERROR "Falló la sincronización RSYNC"
-        return 1
-    fi
-}
-
-upload_sftp() {
-    local file="$1"
-    local host="$2"
-    local user="$3"
-    local remote_path="$4"
-    local password="$5"
-    
-    log INFO "Enviando vía SFTP a $user@$host:$remote_path"
-    
-    if [[ -n "$password" ]]; then
-        sshpass -p "$password" sftp -o StrictHostKeyChecking=no "$user@$host" <<EOF
-put "$file" "$remote_path/"
-bye
-EOF
-    else
-        sftp -o StrictHostKeyChecking=no "$user@$host" <<EOF
-put "$file" "$remote_path/"
-bye
-EOF
-    fi
-    
-    if [[ $? -eq 0 ]]; then
-        log INFO "✓ Archivo enviado exitosamente"
-        return 0
-    else
-        log ERROR "Falló el envío SFTP"
-        return 1
-    fi
-}
-
-upload_webdav() {
-    local file="$1"
-    local url="$2"
-    local username="$3"
-    local password="$4"
-    
-    log INFO "Enviando vía WebDAV a $url"
-    
-    curl -T "$file" -u "$username:$password" "$url/$(basename "$file")" 2>&1
-    
-    if [[ $? -eq 0 ]]; then
-        log INFO "✓ Archivo enviado exitosamente"
-        return 0
-    else
-        log ERROR "Falló el envío WebDAV"
-        return 1
-    fi
-}
-
-auto_upload() {
+upload_remote() {
     local file="$1"
     
-    if [[ "$DO_UPLOAD" != true ]]; then
-        return 0
-    fi
-    
-    log INFO "Iniciando envío automático a servidor remoto"
+    log INFO "Envío remoto a $UPLOAD_HOST via $UPLOAD_TYPE"
     
     case "$UPLOAD_TYPE" in
         "scp")
-            upload_scp "$file" "$UPLOAD_HOST" "$UPLOAD_USER" "$UPLOAD_PATH" "$UPLOAD_KEY"
+            scp -i "$UPLOAD_KEY" -o StrictHostKeyChecking=no "$file" "$UPLOAD_USER@$UPLOAD_HOST:$UPLOAD_PATH"
             ;;
         "rsync")
-            upload_rsync "$file" "$UPLOAD_HOST" "$UPLOAD_USER" "$UPLOAD_PATH" "$UPLOAD_KEY"
+            rsync -avz -e "ssh -i $UPLOAD_KEY" "$file" "$UPLOAD_USER@$UPLOAD_HOST:$UPLOAD_PATH"
             ;;
         "sftp")
-            upload_sftp "$file" "$UPLOAD_HOST" "$UPLOAD_USER" "$UPLOAD_PATH" "$UPLOAD_KEY"
+            echo "put \"$file\" \"$UPLOAD_PATH/\"" | sftp -b - "$UPLOAD_USER@$UPLOAD_HOST"
             ;;
-        "webdav")
-            upload_webdav "$file" "$UPLOAD_HOST" "$UPLOAD_USER" "$UPLOAD_PATH"
+    esac
+}
+
+# ======================[ VIRUSTOTAL ]======================
+check_virustotal() {
+    local file="$1"
+    local api_key="$2"
+    
+    log INFO "Enviando a VirusTotal"
+    
+    local file_hash=$(sha256sum "$file" | cut -d' ' -f1)
+    
+    curl -s -X GET "https://www.virustotal.com/api/v3/files/${file_hash}" \
+        -H "x-apikey: $api_key" > "$OUTPUT_DIR/vt_report.json" 2>/dev/null
+    
+    local positives=$(jq -r '.data.attributes.last_analysis_stats.malicious' "$OUTPUT_DIR/vt_report.json" 2>/dev/null)
+    log INFO "VirusTotal: $positives detecciones"
+}
+
+# ======================[ THEHIVE INTEGRATION ]======================
+configure_thehive() {
+    local config_file="$HOME/.mx-forensic/thehive.conf"
+    mkdir -p "$(dirname "$config_file")"
+    
+    if [[ -f "$config_file" ]]; then
+        source "$config_file"
+        return 0
+    fi
+    
+    log WARN "TheHive no configurado. Crea $config_file con:"
+    echo 'THEHIVE_URL="https://your-thehive.com"
+THEHIVE_API_KEY="your-key"'
+    return 1
+}
+
+create_thehive_case() {
+    local title="MX-FORENSIC - $(hostname) - $(date +%Y%m%d)"
+    local description="Caso generado automáticamente por MX-FORENSIC"
+    
+    local response=$(curl -s -X POST "$THEHIVE_URL/api/case" \
+        -H "Authorization: Bearer $THEHIVE_API_KEY" \
+        -H "Content-Type: application/json" \
+        -d "{\"title\":\"$title\",\"description\":\"$description\",\"severity\":2,\"tlp\":2}")
+    
+    echo "$response" | jq -r '.id' 2>/dev/null
+}
+
+add_thehive_artifact() {
+    local case_id="$1"
+    local data_type="$2"
+    local data="$3"
+    
+    curl -s -X POST "$THEHIVE_URL/api/case/$case_id/artifact" \
+        -H "Authorization: Bearer $THEHIVE_API_KEY" \
+        -H "Content-Type: application/json" \
+        -d "{\"dataType\":\"$data_type\",\"data\":\"$data\"}" > /dev/null 2>&1
+}
+
+# ======================[ MISP INTEGRATION ]======================
+configure_misp() {
+    local config_file="$HOME/.mx-forensic/misp.conf"
+    mkdir -p "$(dirname "$config_file")"
+    
+    if [[ -f "$config_file" ]]; then
+        source "$config_file"
+        return 0
+    fi
+    
+    log WARN "MISP no configurado. Crea $config_file con:"
+    echo 'MISP_URL="https://your-misp.com"
+MISP_API_KEY="your-key"'
+    return 1
+}
+
+query_misp() {
+    local ioc_type="$1"
+    local ioc_value="$2"
+    
+    local response=$(curl -s -X POST "$MISP_URL/attributes/restSearch" \
+        -H "Authorization: $MISP_API_KEY" \
+        -H "Content-Type: application/json" \
+        -d "{\"type\":\"$ioc_type\",\"value\":\"$ioc_value\"}")
+    
+    echo "$response" | jq '.response | length' 2>/dev/null
+}
+
+# ======================[ ELK STACK INTEGRATION ]======================
+configure_elk() {
+    local config_file="$HOME/.mx-forensic/elk.conf"
+    mkdir -p "$(dirname "$config_file")"
+    
+    if [[ -f "$config_file" ]]; then
+        source "$config_file"
+        return 0
+    fi
+    
+    log WARN "ELK no configurado"
+    return 1
+}
+
+send_to_elasticsearch() {
+    local index="mx-forensic-$(date +%Y.%m.%d)"
+    local data="$1"
+    
+    if [[ -n "$ELASTICSEARCH_URL" ]]; then
+        curl -s -X POST "$ELASTICSEARCH_URL/$index/_doc" \
+            -H "Content-Type: application/json" \
+            -d "$data" > /dev/null 2>&1
+    fi
+}
+
+generate_elk_dashboard() {
+    local elk_dir="$OUTPUT_DIR/elk_dashboard"
+    mkdir -p "$elk_dir"
+    
+    log INFO "Generando dashboard ELK"
+    
+    cat > "$elk_dir/kibana_dashboard.ndjson" << 'EOF'
+{"attributes":{"title":"MX-FORENSIC-Dashboard"},"id":"mx-forensic-dashboard","type":"dashboard"}
+EOF
+    
+    cat > "$elk_dir/logstash.conf" << EOF
+input {
+  file {
+    path => "$OUTPUT_DIR/*.json"
+    start_position => "beginning"
+  }
+}
+filter {
+  json { source => "message" }
+  date { match => ["timestamp", "ISO8601"] }
+}
+output {
+  elasticsearch { hosts => ["localhost:9200"] }
+  stdout { codec => rubydebug }
+}
+EOF
+    
+    log INFO "✓ Dashboard ELK: $elk_dir/"
+    echo "$elk_dir"
+}
+
+# ======================[ MACHINE LEARNING ANOMALY DETECTION ]======================
+run_ml_analysis() {
+    local ram_dump="$1"
+    local ml_output="$OUTPUT_DIR/ml_analysis_$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "$ml_output"
+    
+    log INFO "Ejecutando detección de anomalías con ML"
+    
+    # Crear script Python para ML
+    cat > "$ml_output/ml_detector.py" << 'EOF'
+#!/usr/bin/env python3
+import sys, json, os, re
+from collections import Counter
+
+def extract_features(data):
+    features = {
+        'entropy': 0,
+        'string_count': 0,
+        'unique_chars': 0,
+        'suspicious_patterns': []
+    }
+    
+    strings = []
+    try:
+        with open(data, 'rb') as f:
+            content = f.read(1024*1024)  # 1MB sample
+            strings = re.findall(b'[\\x20-\\x7E]{4,}', content)
+    except:
+        pass
+    
+    features['string_count'] = len(strings)
+    features['unique_chars'] = len(set(b''.join(strings[:100]))) if strings else 0
+    
+    # Entropía aproximada
+    if strings:
+        total = sum(len(s) for s in strings[:100])
+        unique = len(set(b''.join(strings[:100])))
+        features['entropy'] = unique / total if total > 0 else 0
+    
+    # Patrones sospechosos
+    suspicious = ['meterpreter', 'reverse_shell', 'mimikatz', 'payload', 'beacon', 'cobalt']
+    for pattern in suspicious:
+        if pattern.encode() in b''.join(strings[:1000]).lower():
+            features['suspicious_patterns'].append(pattern)
+    
+    return features
+
+def detect_anomaly(features):
+    score = 0
+    if features['entropy'] > 0.7:
+        score += 30
+    if features['string_count'] > 10000:
+        score += 20
+    if features['suspicious_patterns']:
+        score += 50
+    
+    return {
+        'anomaly_score': score,
+        'is_anomaly': score > 40,
+        'severity': 'critical' if score > 70 else 'high' if score > 40 else 'low',
+        'features': features
+    }
+
+if __name__ == '__main__':
+    if len(sys.argv) > 1:
+        features = extract_features(sys.argv[1])
+        result = detect_anomaly(features)
+        print(json.dumps(result, indent=2))
+EOF
+    
+    python3 "$ml_output/ml_detector.py" "$ram_dump" > "$ml_output/ml_result.json"
+    
+    local anomaly_score=$(jq -r '.anomaly_score' "$ml_output/ml_result.json" 2>/dev/null)
+    local is_anomaly=$(jq -r '.is_anomaly' "$ml_output/ml_result.json" 2>/dev/null)
+    
+    if [[ "$is_anomaly" == "true" ]]; then
+        log WARN "⚠️ ANOMALÍA DETECTADA - Score: $anomaly_score"
+        send_alert "ML Anomaly Detection" "Se detectó anomalía con score $anomaly_score en $ram_dump"
+    else
+        log INFO "✓ ML: Sin anomalías detectadas (score: $anomaly_score)"
+    fi
+    
+    echo "$ml_output/ml_result.json"
+}
+
+# ======================[ CLOUD FORENSICS ]======================
+configure_cloud() {
+    local cloud_provider="$1"
+    
+    log INFO "Configurando cloud provider: $cloud_provider"
+    
+    case "$cloud_provider" in
+        "aws")
+            if ! command -v aws &> /dev/null; then
+                pip3 install awscli &> /dev/null
+            fi
+            export AWS_PROFILE="${AWS_PROFILE:-default}"
+            log INFO "✓ AWS CLI configurado"
+            ;;
+        "azure")
+            if ! command -v az &> /dev/null; then
+                curl -sL https://aka.ms/InstallAzureCLIDeb | bash &> /dev/null
+            fi
+            log INFO "✓ Azure CLI configurado"
+            ;;
+        "gcp")
+            if ! command -v gcloud &> /dev/null; then
+                echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
+                apt-get install -y google-cloud-sdk &> /dev/null
+            fi
+            log INFO "✓ GCP CLI configurado"
             ;;
         *)
-            log ERROR "Método de envío no soportado: $UPLOAD_TYPE"
+            log ERROR "Cloud provider no soportado: $cloud_provider"
             return 1
             ;;
     esac
 }
 
-# ======================[ VIRUSTOTAL INTEGRATION ]======================
-check_virustotal() {
+upload_to_cloud() {
     local file="$1"
-    local api_key="$2"
     
-    if [[ -z "$api_key" ]]; then
-        log WARN "No se proporcionó API key de VirusTotal"
+    log INFO "Subiendo a cloud: $CLOUD_PROVIDER"
+    
+    case "$CLOUD_PROVIDER" in
+        "aws")
+            aws s3 cp "$file" "s3://$AWS_BUCKET/mx-forensic/$(basename "$file")" --acl bucket-owner-full-control
+            ;;
+        "azure")
+            az storage blob upload --container-name mx-forensic --file "$file" --name "$(basename "$file")" --connection-string "$AZURE_STORAGE"
+            ;;
+        "gcp")
+            gcloud storage cp "$file" "gs://$GCP_BUCKET/mx-forensic/$(basename "$file")"
+            ;;
+    esac
+}
+
+# ======================[ MOBILE FORENSICS ]======================
+setup_mobile_forensics() {
+    log INFO "Configurando forensica móvil"
+    
+    # Instalar herramientas Android
+    if ! command -v adb &> /dev/null; then
+        apt-get install -y android-tools-adb android-tools-fastboot &> /dev/null
+    fi
+    
+    # Instalar herramientas iOS
+    if ! command -v ideviceinfo &> /dev/null; then
+        apt-get install -y libimobiledevice-utils &> /dev/null
+    fi
+    
+    log INFO "✓ Herramientas móviles listas"
+}
+
+mobile_forensics_android() {
+    local output="$OUTPUT_DIR/mobile_android_$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "$output"
+    
+    log INFO "Análisis forense Android"
+    
+    # Verificar dispositivo
+    if ! adb devices | grep -q "device$"; then
+        log ERROR "No se encontró dispositivo Android conectado"
         return 1
     fi
     
-    log INFO "Enviando archivo a VirusTotal para análisis"
+    # Extraer información básica
+    adb shell getprop > "$output/system_properties.txt"
+    adb shell dumpsys > "$output/dumpsys.txt"
+    adb shell ps -Z > "$output/processes.txt"
+    adb shell netstat -an > "$output/netstat.txt"
+    adb shell logcat -d > "$output/logcat.txt"
     
-    local file_size=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file" 2>/dev/null)
+    # Extraer paquetes instalados
+    adb shell pm list packages > "$output/packages.txt"
+    adb shell pm list permissions -g > "$output/permissions.txt"
     
-    if [[ $file_size -gt 33554432 ]]; then  # 32MB limit
-        log WARN "Archivo >32MB, usando método de URL (solo hash)"
-        local file_hash=$(sha256sum "$file" | cut -d' ' -f1)
-        local vt_url="https://www.virustotal.com/api/v3/files/${file_hash}"
-        
-        curl -s -X GET "$vt_url" \
-            -H "x-apikey: $api_key" > "$OUTPUT_DIR/vt_report.json" 2>/dev/null
-    else
-        # Subir archivo
-        curl -s -X POST "https://www.virustotal.com/api/v3/files" \
-            -H "x-apikey: $api_key" \
-            -F "file=@$file" > "$OUTPUT_DIR/vt_upload.json" 2>/dev/null
-        
-        local analysis_id=$(jq -r '.data.id' "$OUTPUT_DIR/vt_upload.json" 2>/dev/null)
-        
-        if [[ -n "$analysis_id" && "$analysis_id" != "null" ]]; then
-            sleep 10  # Esperar análisis
-            curl -s -X GET "https://www.virustotal.com/api/v3/analyses/${analysis_id}" \
-                -H "x-apikey: $api_key" > "$OUTPUT_DIR/vt_report.json" 2>/dev/null
-        fi
+    # Backup de datos (si root)
+    if [[ "$ANDROID_ROOT" == true ]]; then
+        adb root
+        adb pull /data/data/ "$output/app_data/" 2>/dev/null
     fi
     
-    if [[ -f "$OUTPUT_DIR/vt_report.json" ]]; then
-        local positives=$(jq -r '.data.attributes.stats.malicious' "$OUTPUT_DIR/vt_report.json" 2>/dev/null)
-        local total=$(jq -r '.data.attributes.stats. harmless + .data.attributes.stats.malicious + .data.attributes.stats.suspicious' "$OUTPUT_DIR/vt_report.json" 2>/dev/null)
-        
-        if [[ -n "$positives" && "$positives" != "null" ]]; then
-            log INFO "📊 VirusTotal: $positives/$total detecciones"
-            
-            if [[ $positives -gt 0 ]]; then
-                log WARN "⚠️ ARCHIVO MARCADO COMO MALICIOSO por $positives antivirus"
-                send_alert "⚠️ ALERTA: Archivo malicioso detectado por VirusTotal" "$file - $positives/$total detecciones"
-            fi
-        fi
-        
-        # Generar reporte HTML
-        local vt_html="$OUTPUT_DIR/virustotal_report.html"
-        cat > "$vt_html" << EOF
-<!DOCTYPE html>
-<html>
-<head><title>VirusTotal Report</title></head>
-<body>
-<h1>🔍 VirusTotal Analysis Report</h1>
-<pre>$(cat "$OUTPUT_DIR/vt_report.json" | jq . 2>/dev/null)</pre>
-</body>
-</html>
-EOF
-        log INFO "✓ Reporte VirusTotal: $vt_html"
-    else
-        log WARN "No se pudo obtener análisis de VirusTotal"
+    log INFO "✓ Forensica Android completada: $output"
+    echo "$output"
+}
+
+mobile_forensics_ios() {
+    local output="$OUTPUT_DIR/mobile_ios_$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "$output"
+    
+    log INFO "Análisis forense iOS"
+    
+    if ! ideviceinfo &> /dev/null; then
+        log ERROR "No se encontró dispositivo iOS conectado"
+        return 1
     fi
+    
+    # Extraer información
+    ideviceinfo > "$output/device_info.txt"
+    idevicediagnostics > "$output/diagnostics.txt"
+    idevicesyslog > "$output/syslog.txt" 2>/dev/null &
+    local syslog_pid=$!
+    sleep 10
+    kill $syslog_pid 2>/dev/null
+    
+    log INFO "✓ Forensica iOS completada: $output"
+    echo "$output"
 }
 
 # ======================[ DASHBOARD WEB ]======================
@@ -694,27 +684,20 @@ generate_dashboard() {
     local dashboard_dir="$OUTPUT_DIR/dashboard"
     mkdir -p "$dashboard_dir"
     
-    log INFO "Generando dashboard web interactivo"
-    
-    # Datos para el dashboard
-    local timestamp=$(date +%s)
-    local hostname=$(hostname)
-    local total_files=$(find "$OUTPUT_DIR" -type f -name "*.raw" -o -name "*.dd" -o -name "*.tar.gz" 2>/dev/null | wc -l)
-    local total_size=$(du -sh "$OUTPUT_DIR" 2>/dev/null | cut -f1)
+    log INFO "Generando dashboard web"
     
     # JSON data
     cat > "$dashboard_dir/data.json" << EOF
 {
-    "timestamp": $timestamp,
-    "hostname": "$hostname",
-    "total_files": $total_files,
-    "total_size": "$total_size",
+    "timestamp": $(date +%s),
+    "hostname": "$(hostname)",
+    "total_files": $(find "$OUTPUT_DIR" -type f 2>/dev/null | wc -l),
+    "total_size": "$(du -sh "$OUTPUT_DIR" 2>/dev/null | cut -f1)",
     "files": [
 EOF
     
-    find "$OUTPUT_DIR" -type f \( -name "*.raw" -o -name "*.dd" -o -name "*.txt" -o -name "*.json" -o -name "*.html" \) -exec basename {} \; | while read file; do
-        local size=$(du -h "$OUTPUT_DIR/$file" 2>/dev/null | cut -f1)
-        echo "{\"name\":\"$file\",\"size\":\"$size\"}," >> "$dashboard_dir/data.json"
+    find "$OUTPUT_DIR" -type f -name "*.raw" -o -name "*.dd" -o -name "*.txt" 2>/dev/null | while read file; do
+        echo "{\"name\":\"$(basename "$file")\",\"size\":\"$(du -h "$file" 2>/dev/null | cut -f1)\"}," >> "$dashboard_dir/data.json"
     done
     
     sed -i '$ s/,$//' "$dashboard_dir/data.json"
@@ -723,339 +706,141 @@ EOF
     # HTML Dashboard
     cat > "$dashboard_dir/index.html" << 'EOF'
 <!DOCTYPE html>
-<html lang="es">
+<html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MX-FORENSIC Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: 'Courier New', monospace;
-            background: linear-gradient(135deg, #0a0e27 0%, #1a1f3e 100%);
-            color: #00ff41;
-            padding: 20px;
-        }
+        body { font-family: monospace; background: #0a0e27; color: #00ff41; margin: 0; padding: 20px; }
         .container { max-width: 1400px; margin: 0 auto; }
-        .header {
-            text-align: center;
-            padding: 30px;
-            background: rgba(0,255,65,0.1);
-            border-radius: 10px;
-            margin-bottom: 30px;
-            border: 1px solid #00ff41;
-        }
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-        .stat-card {
-            background: rgba(0,0,0,0.5);
-            border: 1px solid #00ff41;
-            border-radius: 10px;
-            padding: 20px;
-            text-align: center;
-            transition: transform 0.3s;
-        }
-        .stat-card:hover { transform: translateY(-5px); }
-        .stat-value {
-            font-size: 2.5em;
-            font-weight: bold;
-            color: #ff3366;
-        }
-        .stat-label { margin-top: 10px; font-size: 0.9em; }
-        .charts-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-        .chart-container {
-            background: rgba(0,0,0,0.5);
-            border: 1px solid #00ff41;
-            border-radius: 10px;
-            padding: 20px;
-        }
-        .file-list {
-            background: rgba(0,0,0,0.5);
-            border: 1px solid #00ff41;
-            border-radius: 10px;
-            padding: 20px;
-            max-height: 500px;
-            overflow-y: auto;
-        }
-        .file-item {
-            padding: 10px;
-            border-bottom: 1px solid #00ff41;
-            display: flex;
-            justify-content: space-between;
-        }
-        .file-item:hover { background: rgba(0,255,65,0.1); }
-        .alert {
-            background: rgba(255,51,102,0.2);
-            border-left: 4px solid #ff3366;
-            padding: 10px;
-            margin: 10px 0;
-        }
-        @keyframes blink {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.3; }
-        }
-        .live { animation: blink 1s infinite; }
-        .footer {
-            text-align: center;
-            padding: 20px;
-            margin-top: 30px;
-            border-top: 1px solid #00ff41;
-        }
+        .header { text-align: center; border-bottom: 2px solid #00ff41; padding: 20px; margin-bottom: 20px; }
+        .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 20px; }
+        .card { background: rgba(0,0,0,0.5); border: 1px solid #00ff41; border-radius: 10px; padding: 20px; text-align: center; }
+        .value { font-size: 2em; color: #ff3366; }
+        canvas { max-height: 400px; }
+        .file-list { background: rgba(0,0,0,0.5); border: 1px solid #00ff41; border-radius: 10px; padding: 20px; margin-top: 20px; max-height: 400px; overflow-y: auto; }
+        .file-item { padding: 5px; border-bottom: 1px solid #00ff41; display: flex; justify-content: space-between; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>🔍 MX-FORENSIC Dashboard</h1>
-            <p>Live Forensics Monitoring & Analysis Platform</p>
-            <p id="timestamp" class="live"></p>
-        </div>
-        
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-value" id="totalFiles">0</div>
-                <div class="stat-label">Archivos Recolectados</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" id="totalSize">0</div>
-                <div class="stat-label">Tamaño Total</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" id="totalRAM">0</div>
-                <div class="stat-label">RAM Capturada (GB)</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" id="totalDisk">0</div>
-                <div class="stat-label">Disco Capturado (GB)</div>
-            </div>
-        </div>
-        
-        <div class="charts-grid">
-            <div class="chart-container">
-                <canvas id="fileTypesChart"></canvas>
-            </div>
-            <div class="chart-container">
-                <canvas id="timelineChart"></canvas>
-            </div>
-        </div>
-        
-        <div class="file-list">
-            <h2>📁 Evidencias Recolectadas</h2>
-            <div id="fileList"></div>
-        </div>
-        
-        <div class="footer">
-            <p>MX-FORENSIC v3.0 | Powered by Falconmx1 | 🔒 Cadena de Custodia Activa</p>
-            <p><small>Actualización en tiempo real cada 5 segundos</small></p>
-        </div>
+        <div class="header"><h1>🔍 MX-FORENSIC Dashboard v4.0</h1><p id="timestamp"></p></div>
+        <div class="stats"><div class="card"><div class="value" id="totalFiles">0</div><div>Archivos</div></div><div class="card"><div class="value" id="totalSize">0</div><div>Tamaño Total</div></div><div class="card"><div class="value" id="totalEvidence">0</div><div>Evidencias</div></div></div>
+        <canvas id="chart"></canvas>
+        <div class="file-list"><h2>📁 Evidencias</h2><div id="fileList"></div></div>
     </div>
-    
     <script>
-        let refreshInterval;
-        
         function loadData() {
-            fetch('data.json?' + Date.now())
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('timestamp').innerHTML = '📡 Última actualización: ' + new Date(data.timestamp * 1000).toLocaleString();
-                    document.getElementById('totalFiles').innerText = data.total_files;
-                    document.getElementById('totalSize').innerText = data.total_size;
-                    
-                    // Calcular estadísticas
-                    let ramSize = 0, diskSize = 0;
-                    data.files.forEach(file => {
-                        if (file.name.includes('.raw')) {
-                            let size = parseFloat(file.size);
-                            if (!isNaN(size)) ramSize += size;
-                        }
-                        if (file.name.includes('.dd')) {
-                            let size = parseFloat(file.size);
-                            if (!isNaN(size)) diskSize += size;
-                        }
-                    });
-                    document.getElementById('totalRAM').innerText = ramSize.toFixed(2);
-                    document.getElementById('totalDisk').innerText = diskSize.toFixed(2);
-                    
-                    // Tipos de archivo
-                    const types = {};
-                    data.files.forEach(file => {
-                        const ext = file.name.split('.').pop();
-                        types[ext] = (types[ext] || 0) + 1;
-                    });
-                    
-                    // Gráfico de tipos
-                    const ctx1 = document.getElementById('fileTypesChart').getContext('2d');
-                    new Chart(ctx1, {
-                        type: 'doughnut',
-                        data: {
-                            labels: Object.keys(types),
-                            datasets: [{
-                                data: Object.values(types),
-                                backgroundColor: ['#00ff41', '#ff3366', '#ffcc00', '#66ff99', '#ff6600']
-                            }]
-                        },
-                        options: { responsive: true, title: { display: true, text: 'Tipos de Archivo' } }
-                    });
-                    
-                    // Lista de archivos
-                    const fileList = document.getElementById('fileList');
-                    fileList.innerHTML = '';
-                    data.files.forEach(file => {
-                        const div = document.createElement('div');
-                        div.className = 'file-item';
-                        div.innerHTML = `<span>📄 ${file.name}</span><span>${file.size}</span>`;
-                        fileList.appendChild(div);
-                    });
-                })
-                .catch(err => console.error('Error:', err));
+            fetch('data.json?'+Date.now()).then(r=>r.json()).then(d=>{
+                document.getElementById('timestamp').innerHTML='📡 '+new Date(d.timestamp*1000).toLocaleString();
+                document.getElementById('totalFiles').innerText=d.total_files;
+                document.getElementById('totalSize').innerText=d.total_size;
+                document.getElementById('totalEvidence').innerText=d.files.length;
+                let ctx=document.getElementById('chart').getContext('2d');
+                let types={}; d.files.forEach(f=>{let e=f.name.split('.').pop(); types[e]=(types[e]||0)+1;});
+                new Chart(ctx,{type:'doughnut',data:{labels:Object.keys(types),datasets:[{data:Object.values(types),backgroundColor:['#00ff41','#ff3366','#ffcc00','#66ff99']}]}});
+                document.getElementById('fileList').innerHTML=d.files.map(f=>`<div class="file-item"><span>📄 ${f.name}</span><span>${f.size}</span></div>`).join('');
+            });
         }
-        
-        loadData();
-        refreshInterval = setInterval(loadData, 5000);
+        loadData(); setInterval(loadData,5000);
     </script>
 </body>
 </html>
 EOF
     
-    log INFO "✓ Dashboard generado en: $dashboard_dir/index.html"
-    
-    # Iniciar servidor web local
-    if [[ "$DO_DASHBOARD" == true ]]; then
-        log INFO "🌐 Iniciando servidor web en puerto 8080"
-        cd "$dashboard_dir"
-        python3 -m http.server 8080 > /dev/null 2>&1 &
-        local pid=$!
-        log INFO "✓ Dashboard disponible en: http://localhost:8080"
-        echo $pid > "$OUTPUT_DIR/dashboard.pid"
-    fi
-    
+    cd "$dashboard_dir"
+    python3 -m http.server 8080 > /dev/null 2>&1 &
+    log INFO "✓ Dashboard: http://localhost:8080"
     echo "$dashboard_dir/index.html"
 }
 
-# ======================[ NOTIFICACIONES Y ALERTAS ]======================
+# ======================[ REPORTES Y ALERTAS ]======================
+generate_html_report() {
+    local report_file="$OUTPUT_DIR/report_$(date +%Y%m%d_%H%M%S).html"
+    
+    cat > "$report_file" << EOF
+<!DOCTYPE html>
+<html>
+<head><title>MX-FORENSIC Report</title></head>
+<body>
+<h1>🔍 MX-FORENSIC Forensic Report</h1>
+<p><b>Host:</b> $(hostname)</p>
+<p><b>Date:</b> $(date)</p>
+<p><b>Case ID:</b> MXF-$(date +%Y%m%d-%H%M%S)</p>
+<h2>Evidence Collected</h2>
+<ul>
+$(find "$OUTPUT_DIR" -type f -name "*.raw" -o -name "*.dd" -o -name "*.tar.gz" | while read f; do echo "<li>$(basename "$f") - $(du -h "$f" | cut -f1)</li>"; done)
+</ul>
+<h2>Hash Integrity</h2>
+<pre>$(find "$OUTPUT_DIR" -name "hashes_*.txt" -exec cat {} \; 2>/dev/null)</pre>
+</body>
+</html>
+EOF
+    
+    echo "$report_file"
+}
+
 send_webhook() {
     local message="$1"
-    local webhook_url="${2:-$WEBHOOK_URL}"
-    
-    if [[ -z "$webhook_url" ]]; then
-        return 0
-    fi
-    
-    curl -s -X POST "$webhook_url" \
-        -H "Content-Type: application/json" \
-        -d "{\"content\":\"🔍 MX-FORENSIC ALERTA\n$message\", \"username\":\"MX-FORENSIC\"}" > /dev/null 2>&1
+    [[ -z "$WEBHOOK_URL" ]] && return
+    curl -s -X POST "$WEBHOOK_URL" -H "Content-Type: application/json" -d "{\"content\":\"$message\"}" > /dev/null 2>&1
 }
 
 send_email() {
     local subject="$1"
     local body="$2"
-    local email="${3:-$ALERT_EMAIL}"
-    
-    if [[ -z "$email" ]]; then
-        return 0
-    fi
-    
-    echo -e "$body" | mail -s "$subject" "$email" 2>/dev/null || true
+    [[ -z "$ALERT_EMAIL" ]] && return
+    echo -e "$body" | mail -s "$subject" "$ALERT_EMAIL" 2>/dev/null
 }
 
 send_alert() {
     local title="$1"
     local message="$2"
-    
-    log WARN "🔔 ALERTA: $title - $message"
     send_webhook "**$title**\n$message"
     send_email "$title" "$message"
 }
 
-# ======================[ GENERACIÓN DE REPORTES ]======================
-generate_html_report() {
-    local report_file="$OUTPUT_DIR/report_$(date +%Y%m%d_%H%M%S).html"
+correlate_with_misp() {
+    local case_id="$1"
+    local analysis_file="$2"
     
-    log INFO "Generando reporte HTML completo"
+    log INFO "Correlacionando con MISP"
     
-    # Recolectar información para el reporte
-    local ram_files=$(find "$OUTPUT_DIR" -name "ram_*.raw" -o -name "ram_*.raw.aes256" 2>/dev/null | wc -l)
-    local disk_files=$(find "$OUTPUT_DIR" -name "disk_*.dd" -o -name "disk_*.dd.aes256" 2>/dev/null | wc -l)
-    local yara_matches=$(find "$OUTPUT_DIR" -name "yara_*.txt" -exec cat {} \; 2>/dev/null | wc -l)
-    local live_responses=$(find "$OUTPUT_DIR" -name "live_response_*.tar.gz" 2>/dev/null | wc -l)
+    # Extraer IPs del análisis
+    grep -Eo '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' "$analysis_file" 2>/dev/null | sort -u | while read ip; do
+        if [[ ! "$ip" =~ ^(127\.|10\.|172\.16\.|192\.168\.) ]]; then
+            local misp_count=$(query_misp "ip-dst" "$ip")
+            if [[ "$misp_count" -gt 0 ]]; then
+                log WARN "⚠️ IP maliciosa en MISP: $ip"
+                add_thehive_artifact "$case_id" "ip" "$ip"
+            fi
+        fi
+    done
+}
+
+auto_classify_incident() {
+    local analysis_file="$1"
+    local case_id="$2"
     
-    cat > "$report_file" << EOF
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>MX-FORENSIC - Reporte Forense</title>
-    <style>
-        body { font-family: 'Courier New', monospace; margin: 20px; background: #0a0e27; color: #00ff41; }
-        .container { max-width: 1200px; margin: 0 auto; }
-        .header { text-align: center; border-bottom: 2px solid #00ff41; padding: 20px; }
-        .section { margin: 30px 0; padding: 20px; border: 1px solid #00ff41; border-radius: 10px; }
-        .critical { color: #ff3366; font-weight: bold; }
-        .warning { color: #ffcc00; }
-        .success { color: #00ff41; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { border: 1px solid #00ff41; padding: 10px; text-align: left; }
-        th { background: rgba(0,255,65,0.2); }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🔍 MX-FORENSIC - Reporte de Análisis Forense</h1>
-            <p><strong>Host:</strong> $(hostname)</p>
-            <p><strong>Fecha:</strong> $(date)</p>
-            <p><strong>Caso ID:</strong> MXF-$(date +%Y%m%d-%H%M%S)</p>
-        </div>
-        
-        <div class="section">
-            <h2>📊 Resumen de Evidencias</h2>
-            <table>
-                <tr><th>Tipo</th><th>Cantidad</th><th>Estado</th></tr>
-                <tr><td>Dumps de RAM</td><td>$ram_files</td><td class="success">✓ Recolectado</td></tr>
-                <tr><td>Imágenes de Disco</td><td>$disk_files</td><td class="success">✓ Recolectado</td></tr>
-                <tr><td>Coincidencias YARA</td><td>$yara_matches</td><td class="$(if [[ $yara_matches -gt 0 ]]; then echo 'critical'; else echo 'success'; fi)">$yara_matches</td></tr>
-                <tr><td>Live Responses</td><td>$live_responses</td><td class="success">✓ Completado</td></tr>
-            </table>
-        </div>
-        
-        <div class="section">
-            <h2>🔐 Cadena de Custodia</h2>
-            <ul>
-                <li>✓ Hashing de integridad aplicado</li>
-                <li>✓ Timestamps documentados</li>
-                <li>✓ Cifrado AES-256: $(if [[ "$DO_ENCRYPT" == true ]]; then echo "Activado"; else echo "No activado"; fi)</li>
-                <li>✓ Envío remoto: $(if [[ "$DO_UPLOAD" == true ]]; then echo "Activado ($UPLOAD_TYPE)"; else echo "No activado"; fi)</li>
-            </ul>
-        </div>
-        
-        <div class="section">
-            <h2>🚨 Hallazgos Críticos</h2>
-            <div id="findings">
-                <pre>$(find "$OUTPUT_DIR" -name "analysis_*.txt" -exec head -50 {} \; 2>/dev/null | grep -E "pass|token|malware|suspicious" | head -20)</pre>
-            </div>
-        </div>
-        
-        <div class="footer">
-            <p>Reporte generado por MX-FORENSIC v$VERSION</p>
-            <p><em>Este documento es parte de la cadena de custodia oficial del caso</em></p>
-        </div>
-    </div>
-</body>
-</html>
-EOF
+    local score=0
     
-    log INFO "✓ Reporte HTML generado: $report_file"
-    echo "$report_file"
+    if grep -qi "meterpreter\|cobalt" "$analysis_file" 2>/dev/null; then
+        score=$((score + 50))
+    fi
+    if grep -qi "stratum\|miner" "$analysis_file" 2>/dev/null; then
+        score=$((score + 30))
+    fi
+    if grep -qi "pass\|token" "$analysis_file" 2>/dev/null; then
+        score=$((score + 20))
+    fi
+    
+    if [[ $score -ge 50 ]]; then
+        send_alert "CRITICAL INCIDENT" "Severity score: $score"
+        log WARN "⚠️ INCIDENTE CRÍTICO - Score: $score"
+    elif [[ $score -ge 30 ]]; then
+        log WARN "⚠️ Incidente de alta severidad - Score: $score"
+    fi
 }
 
 # ======================[ FUNCIÓN PRINCIPAL ]======================
@@ -1066,54 +851,33 @@ ${CYAN}MX-FORENSIC v$VERSION - Suite Forense Profesional${NC}
 ${GREEN}USO:${NC}
     sudo $0 [OPCIONES]
 
-${GREEN}OPCIONES PRINCIPALES:${NC}
-    --ram                          Dump de memoria RAM
-    --disk DISCO                   Dump de disco (ej: /dev/sda)
-    --hash                         Calcular hashes de integridad
-    --analyze                      Análisis básico de memoria
-    --report                       Generar reporte HTML
+${GREEN}CORE FORENSIC:${NC}
+    --ram, --disk DISCO, --hash, --analyze, --report
+    --volatility, --yara, --live-response, --ewf
 
-${GREEN}MÓDULOS AVANZADOS:${NC}
-    --volatility                   Análisis con Volatility 3
-    --yara                         Escaneo con YARA rules
-    --live-response                Live Response (evidencias en caliente)
-    --ewf                          Crear imagen EWF (formato EnCase)
+${GREEN}SECURITY:${NC}
+    --encrypt, --decrypt FILE
 
-${GREEN}CIFRADO Y SEGURIDAD:${NC}
-    --encrypt                      Cifrar evidencias con AES-256
-    --decrypt ARCHIVO              Descifrar evidencias
+${GREEN}INTEGRATIONS:${NC}
+    --thehive, --misp, --elk, --virustotal API_KEY
+    --webhook URL, --email EMAIL, --dashboard
 
-${GREEN}ENVÍO REMOTO:${NC}
-    --upload                       Habilitar envío automático
-    --upload-type {scp|rsync|sftp|webdav}
-    --upload-host HOST
-    --upload-user USER
-    --upload-path PATH
-    --upload-key KEY              (para SCP/RSYNC) o password (para SFTP)
+${GREEN}ADVANCED:${NC}
+    --ml, --auto-classify
 
-${GREEN}INTEGRACIONES:${NC}
-    --virustotal API_KEY          Analizar con VirusTotal
-    --webhook URL                 Enviar alertas a Discord/Slack
-    --email EMAIL                 Notificaciones por email
+${GREEN}CLOUD:${NC}
+    --cloud {aws|azure|gcp}, --aws-bucket BUCKET
+    --azure-storage CONN, --gcp-bucket BUCKET
 
-${GREEN}DASHBOARD:${NC}
-    --dashboard                    Generar dashboard web interactivo
+${GREEN}MOBILE:${NC}
+    --mobile, --android, --ios, --android-root
 
 ${GREEN}EJEMPLOS:${NC}
-    # Análisis forense completo
-    sudo $0 --ram --disk /dev/sda --hash --analyze --report
-
-    # Con cifrado y envío remoto
-    sudo $0 --ram --encrypt --upload --upload-type scp --upload-host server.com --upload-user root --upload-path /evidencias --upload-key ~/.ssh/id_rsa
-
-    # Modo respuesta a incidentes
-    sudo $0 --live-response --yara --virustotal TU_API_KEY --webhook https://discord.com/api/webhooks/...
-
-    # Dashboard en vivo
-    sudo $0 --ram --disk /dev/sda --dashboard --report
-
-${GREEN}AUTOR:${NC} Falconmx1
-${GREEN}LICENCIA:${NC} GPL-3.0
+    sudo $0 --ram --disk /dev/sda --hash --report
+    sudo $0 --thehive --misp --auto-classify --webhook URL
+    sudo $0 --ml --elk --dashboard
+    sudo $0 --mobile --android
+    sudo $0 --cloud aws --aws-bucket my-bucket
 EOF
 }
 
@@ -1141,8 +905,21 @@ parse_arguments() {
             --webhook) WEBHOOK_URL="$2"; shift ;;
             --email) ALERT_EMAIL="$2"; shift ;;
             --dashboard) DO_DASHBOARD=true ;;
+            --thehive) DO_THEHIVE=true ;;
+            --misp) DO_MISP=true ;;
+            --elk) DO_ELK=true ;;
+            --ml) DO_ML=true ;;
+            --cloud) DO_CLOUD=true; CLOUD_PROVIDER="$2"; shift ;;
+            --aws-bucket) AWS_BUCKET="$2"; shift ;;
+            --azure-storage) AZURE_STORAGE="$2"; shift ;;
+            --gcp-bucket) GCP_BUCKET="$2"; shift ;;
+            --mobile) DO_MOBILE=true ;;
+            --android) MOBILE_OS="android" ;;
+            --ios) MOBILE_OS="ios" ;;
+            --android-root) ANDROID_ROOT=true ;;
+            --auto-classify) DO_AUTO_CLASSIFY=true ;;
             --output) OUTPUT_DIR="$2"; shift ;;
-            --help| -h) show_help; exit 0 ;;
+            --help|-h) show_help; exit 0 ;;
             *) log ERROR "Opción desconocida: $1"; show_help; exit 1 ;;
         esac
         shift
@@ -1151,14 +928,12 @@ parse_arguments() {
 
 main() {
     print_banner
-    
-    # Validaciones iniciales
     check_root
     mkdir -p "$OUTPUT_DIR"
     setup_logging
     
     log INFO "MX-FORENSIC v$VERSION iniciado"
-    log INFO "Directorios de salida: $OUTPUT_DIR"
+    log INFO "Output: $OUTPUT_DIR"
     
     # Modo descifrado
     if [[ -n "${DECRYPT_FILE:-}" ]]; then
@@ -1166,77 +941,91 @@ main() {
         exit $?
     fi
     
-    # Verificar argumentos
-    if [[ "$DO_RAM" == false && -z "$DO_DISK" && "$DO_LIVE_RESPONSE" == false ]]; then
-        log ERROR "No se especificó ninguna acción"
-        show_help
-        exit 1
-    fi
-    
-    # Recolección de evidencias
     declare -a EVIDENCES
     
+    # Live Response
     if [[ "$DO_LIVE_RESPONSE" == true ]]; then
-        live_response
-        EVIDENCES+=("$OUTPUT_DIR/live_response_*.tar.gz")
-        send_alert "Live Response Completado" "Se recolectaron evidencias en caliente del sistema"
+        EVIDENCES+=("$(live_response)")
     fi
     
+    # RAM Dump
     if [[ "$DO_RAM" == true ]]; then
         RAM_DUMP=$(dump_ram)
         EVIDENCES+=("$RAM_DUMP")
         
-        if [[ "$DO_HASH" == true ]]; then
-            calculate_hashes "$RAM_DUMP"
-        fi
-        
-        if [[ "$DO_ANALYZE" == true ]]; then
-            simple_analysis "$RAM_DUMP"
-        fi
-        
-        if [[ "$DO_VOLATILITY" == true ]]; then
-            run_volatility "$RAM_DUMP"
-        fi
-        
-        if [[ "$DO_YARA" == true ]]; then
-            run_yara "$RAM_DUMP"
-        fi
-        
-        if [[ "$DO_VT" == true ]]; then
-            check_virustotal "$RAM_DUMP" "$VT_API_KEY"
-        fi
+        [[ "$DO_HASH" == true ]] && calculate_hashes "$RAM_DUMP"
+        [[ "$DO_ANALYZE" == true ]] && ANALYSIS_FILE=$(simple_analysis "$RAM_DUMP")
+        [[ "$DO_VOLATILITY" == true ]] && run_volatility "$RAM_DUMP"
+        [[ "$DO_YARA" == true ]] && run_yara "$RAM_DUMP"
+        [[ "$DO_VT" == true ]] && check_virustotal "$RAM_DUMP" "$VT_API_KEY"
+        [[ "$DO_ML" == true ]] && run_ml_analysis "$RAM_DUMP"
     fi
     
+    # Disk Dump
     if [[ -n "$DO_DISK" ]]; then
         DISK_DUMP=$(dump_disk "$DO_DISK")
         EVIDENCES+=("$DISK_DUMP")
-        
-        if [[ "$DO_EWF" == true ]]; then
-            create_ewf "$DO_DISK"
+        [[ "$DO_EWF" == true ]] && create_ewf "$DO_DISK"
+    fi
+    
+    # Mobile Forensics
+    if [[ "$DO_MOBILE" == true ]]; then
+        setup_mobile_forensics
+        if [[ "$MOBILE_OS" == "android" ]]; then
+            mobile_forensics_android
+        elif [[ "$MOBILE_OS" == "ios" ]]; then
+            mobile_forensics_ios
         fi
     fi
     
     # Cifrado
     if [[ "$DO_ENCRYPT" == true ]]; then
         for evidence in "${EVIDENCES[@]}"; do
-            if [[ -f "$evidence" ]]; then
-                encrypt_evidence "$evidence"
-            fi
+            [[ -f "$evidence" ]] && encrypt_evidence "$evidence"
         done
     fi
     
     # Envío remoto
     if [[ "$DO_UPLOAD" == true ]]; then
         for evidence in "${EVIDENCES[@]}"; do
-            if [[ -f "$evidence" ]]; then
-                auto_upload "$evidence"
-            fi
+            [[ -f "$evidence" ]] && upload_remote "$evidence"
         done
     fi
     
-    # Reportes
-    if [[ "$DO_REPORT" == true ]]; then
-        generate_html_report
+    # Cloud
+    if [[ "$DO_CLOUD" == true ]]; then
+        configure_cloud "$CLOUD_PROVIDER"
+        for evidence in "${EVIDENCES[@]}"; do
+            [[ -f "$evidence" ]] && upload_to_cloud "$evidence"
+        done
+    fi
+    
+    # TheHive
+    if [[ "$DO_THEHIVE" == true ]] && configure_thehive; then
+        CASE_ID=$(create_thehive_case)
+        for evidence in "${EVIDENCES[@]}"; do
+            [[ -f "$evidence" ]] && add_thehive_artifact "$CASE_ID" "file" "$(basename "$evidence")"
+        done
+    fi
+    
+    # MISP
+    if [[ "$DO_MISP" == true ]] && configure_misp; then
+        MISP_EVENT_ID=$(create_misp_event)
+    fi
+    
+    # Correlación TheHive-MISP
+    if [[ "$DO_THEHIVE" == true && "$DO_MISP" == true && -n "$ANALYSIS_FILE" ]]; then
+        correlate_with_misp "$CASE_ID" "$ANALYSIS_FILE"
+    fi
+    
+    # Clasificación automática
+    if [[ "$DO_AUTO_CLASSIFY" == true && -n "$ANALYSIS_FILE" ]]; then
+        auto_classify_incident "$ANALYSIS_FILE" "$CASE_ID"
+    fi
+    
+    # ELK
+    if [[ "$DO_ELK" == true ]]; then
+        generate_elk_dashboard
     fi
     
     # Dashboard
@@ -1244,13 +1033,17 @@ main() {
         generate_dashboard
     fi
     
-    # Alerta final
-    send_webhook "✅ Investigación forense completada\nHost: $(hostname)\nEvidencias: ${#EVIDENCES[@]}\nDirectorio: $OUTPUT_DIR"
+    # Reporte final
+    if [[ "$DO_REPORT" == true ]]; then
+        generate_html_report
+    fi
+    
+    send_webhook "✅ Forense completado en $(hostname) - $(date)"
     
     log INFO "═══════════════════════════════════════════════════════════"
-    log INFO "🎯 MX-FORENSIC FINALIZADO EXITOSAMENTE"
-    log INFO "📁 Evidencias guardadas en: $OUTPUT_DIR"
-    log INFO "📋 Log completo: $LOG_FILE"
+    log INFO "🎯 MX-FORENSIC v$VERSION FINALIZADO"
+    log INFO "📁 Evidencias: $OUTPUT_DIR"
+    log INFO "📋 Log: $LOG_FILE"
     log INFO "═══════════════════════════════════════════════════════════"
 }
 
